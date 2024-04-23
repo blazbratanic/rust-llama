@@ -11,4 +11,10 @@ fn main() {
     println!("{:?}", m1 + m2 + m3 + 10.0);
     println!("{:?}", m3 * 5.0);
     println!("{:?}", (m3 * 5.0 + 9.0) / 2.0);
+
+
+    let ref m4 = math::Matrix::<f32, 2>::with_value([8, 4], 8.0);
+    let ref m5 = math::Matrix::<f32, 2>::with_value([4, 9], 5.0);
+    println!("{:?}", math::matmul(m4, m5));
 }
+
