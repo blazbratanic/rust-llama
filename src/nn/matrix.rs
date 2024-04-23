@@ -1,5 +1,4 @@
-pub trait Numeric: num_traits::NumAssign + Clone + Default + Copy + std::fmt::Debug {}
-impl<T> Numeric for T where T: num_traits::NumAssign + Clone + Default + Copy + std::fmt::Debug {}
+use super::traits::Numeric;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Dims {
@@ -43,6 +42,50 @@ pub struct Matrix<T: Numeric> {
     contiguous_: bool,
 }
 
+impl<T: Numeric> Matrix<T> {
+    // Constructs a new, empty `Matric<T>`.
+    pub fn new(dims: &[usize]) -> Self {
+        Self::with_value(dims, T::default())
+    }
+    // Constructs a new, empty `Matric<T>`.
+    pub fn with_value(dims: &[usize], value: T) -> Self {
+        assert!(dims.len() > 0, "Matrix dim must be > 0");
+        let size: usize = dims.iter().fold(1, |acc, x| acc * x);
+        Self {
+            data_: vec![value; size],
+            dims_: dims.into(),
+            contiguous_: true,
+        }
+    }
+
+    pub fn apply(&mut self, f: &dyn Fn(T) -> T) -> &mut Matrix<T> {
+        for i in 0..self.data_.len() {
+            self.data_[i] = f(self.data_[i]);
+        }
+        return self;
+    }
+
+    pub fn apply2(&mut self, k: T, f: &dyn Fn(T, T) -> T) -> &mut Matrix<T> {
+        for i in 0..self.data_.len() {
+            self.data_[i] = f(k, self.data_[i]);
+        }
+        return self;
+    }
+
+    pub fn dims(&self) -> &[usize] {
+        self.dims_.dims()
+    }
+    pub fn data(&self) -> &std::vec::Vec<T> {
+        &self.data_
+    }
+    pub fn mutable_data(&mut self) -> &mut std::vec::Vec<T> {
+        &mut self.data_
+    }
+    pub fn contiguous(&self) -> bool {
+        self.contiguous_
+    }
+}
+
 fn print_matrix<T: Numeric>(
     data: &std::vec::Vec<T>,
     dims: &[usize],
@@ -75,36 +118,6 @@ impl<T: Numeric> std::fmt::Display for Matrix<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "Dims {:?}\n", self.dims())?;
         return print_matrix(self.data(), self.dims(), 0, f);
-    }
-}
-
-impl<T: Numeric> Matrix<T> {
-    // Constructs a new, empty `Matric<T>`.
-    pub fn new(dims: &[usize]) -> Self {
-        Self::with_value(dims, T::default())
-    }
-    // Constructs a new, empty `Matric<T>`.
-    pub fn with_value(dims: &[usize], value: T) -> Self {
-        assert!(dims.len() > 0, "Matrix dim must be > 0");
-        let size: usize = dims.iter().fold(1, |acc, x| acc * x);
-        Self {
-            data_: vec![value; size],
-            dims_: dims.into(),
-            contiguous_: true,
-        }
-    }
-
-    pub fn dims(&self) -> &[usize] {
-        self.dims_.dims()
-    }
-    pub fn data(&self) -> &std::vec::Vec<T> {
-        &self.data_
-    }
-    pub fn mutable_data(&mut self) -> &mut std::vec::Vec<T> {
-        &mut self.data_
-    }
-    pub fn contiguous(&self) -> bool {
-        self.contiguous_
     }
 }
 

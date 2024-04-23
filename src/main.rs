@@ -17,6 +17,7 @@ fn main() {
     println!("{:?}", nn::matmul(m4, m5));
 
     let ref m6 = nn::Matrix::<f32>::with_value(&[2, 8, 4], 8.0);
-    let ref m7 = nn::Matrix::<f32>::with_value(&[2, 4, 9], 5.0);
+    let ref mut m7 = nn::Matrix::<f32>::with_value(&[2, 4, 9], 1.0);
     println!("{}", nn::matmul(m6, m7));
+    println!("{}", m7.apply(&nn::sigmoid::<f32>));
 }
