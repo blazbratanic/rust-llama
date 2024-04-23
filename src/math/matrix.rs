@@ -1,12 +1,45 @@
-use num_traits;
-
 pub trait Numeric: num_traits::NumAssign + Clone + Default + Copy + std::fmt::Debug {}
 impl<T> Numeric for T where T: num_traits::NumAssign + Clone + Default + Copy + std::fmt::Debug {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Matrix<T: Numeric, const DIM: usize> {
+struct Dims {
+    // Max num of dims is 32.
+    dims_: [usize; 32],
+    ndims_: usize,
+}
+
+impl Dims {
+    pub fn dims(&self) -> &[usize] {
+        &self.dims_[..self.ndims_]
+    }
+    pub fn set_dim_size(&mut self, dim: usize, size: usize) {
+        self.dims_[dim] = size;
+    }
+}
+
+impl Into<Dims> for &[usize] {
+    fn into(self) -> Dims {
+        assert!(self.len() <= 32, "Max number of dimensions is 32");
+        assert!(
+            self.len() > 0,
+            "Cannot create a 0 dimensional Dim structure"
+        );
+        let mut d = [0; 32];
+        for i in 0..self.len() {
+            d[i] = self[i];
+        }
+
+        Dims {
+            dims_: d,
+            ndims_: self.len(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Matrix<T: Numeric> {
     data_: std::vec::Vec<T>,
-    dims_: [usize; DIM],
+    dims_: Dims,
     contiguous_: bool,
 }
 
@@ -38,30 +71,31 @@ fn print_matrix<T: Numeric>(
     Ok(())
 }
 
-impl<T: Numeric, const DIM: usize> std::fmt::Display for Matrix<T, DIM> {
+impl<T: Numeric> std::fmt::Display for Matrix<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "Dims {:?}\n", self.dims())?;
         return print_matrix(self.data(), self.dims(), 0, f);
     }
 }
 
-impl<T: Numeric, const DIM: usize> Matrix<T, DIM> {
+impl<T: Numeric> Matrix<T> {
     // Constructs a new, empty `Matric<T>`.
-    pub fn new(dims: &[usize; DIM]) -> Self {
+    pub fn new(dims: &[usize]) -> Self {
         Self::with_value(dims, T::default())
     }
     // Constructs a new, empty `Matric<T>`.
-    pub fn with_value(dims: [usize; DIM], value: T) -> Self {
-        assert!(DIM > 0, "Matrix dim must be > 0");
+    pub fn with_value(dims: &[usize], value: T) -> Self {
+        assert!(dims.len() > 0, "Matrix dim must be > 0");
         let size: usize = dims.iter().fold(1, |acc, x| acc * x);
         Self {
             data_: vec![value; size],
-            dims_: dims,
+            dims_: dims.into(),
             contiguous_: true,
         }
     }
 
-    pub fn dims(&self) -> &[usize; DIM] {
-        &self.dims_
+    pub fn dims(&self) -> &[usize] {
+        self.dims_.dims()
     }
     pub fn data(&self) -> &std::vec::Vec<T> {
         &self.data_
@@ -74,74 +108,77 @@ impl<T: Numeric, const DIM: usize> Matrix<T, DIM> {
     }
 }
 
-// impl<T: Default + Clone, const DIM: usize>
-pub fn equal_dims<T: Numeric, const LDIM: usize, const RDIM: usize>(
-    m1: &Matrix<T, LDIM>,
-    m2: &Matrix<T, RDIM>,
-) where
+// impl<T: Default + Clone>
+pub fn equal_dims<T: Numeric>(m1: &Matrix<T>, m2: &Matrix<T>)
+where
     T: Default,
 {
+    assert!(
+        m1.dims().len() == m2.dims().len(),
+        "Matrices have different number of dimensions"
+    );
+
     for (d1, d2) in std::iter::zip(m1.dims().iter().rev(), m2.dims().iter().rev()) {
-        assert!(d1 == d2, "Can only add matrices of same shape.");
+        assert!(d1 == d2, "Dimension size mismatch.");
     }
 }
 
 // --- Scalar ---
 // Add scalar
-impl<T: Numeric, const DIM: usize> core::ops::AddAssign<T> for Matrix<T, DIM> {
-    fn add_assign(self: &mut Matrix<T, DIM>, rhs: T) {
+impl<T: Numeric> core::ops::AddAssign<T> for Matrix<T> {
+    fn add_assign(self: &mut Matrix<T>, rhs: T) {
         for i in 0..self.data_.len() {
             self.data_[i] += rhs
         }
     }
 }
 #[opimps::impl_ops_rprim(core::ops::Add)]
-pub fn add<T: Numeric, const DIM: usize>(self: Matrix<T, DIM>, rhs: T) -> Matrix<T, DIM> {
+pub fn add<T: Numeric>(self: Matrix<T>, rhs: T) -> Matrix<T> {
     let mut result = self.clone();
     result += rhs;
     return result;
 }
 
 // Mul scalar
-impl<T: Numeric, const DIM: usize> core::ops::MulAssign<T> for Matrix<T, DIM> {
-    fn mul_assign(self: &mut Matrix<T, DIM>, rhs: T) {
+impl<T: Numeric> core::ops::MulAssign<T> for Matrix<T> {
+    fn mul_assign(self: &mut Matrix<T>, rhs: T) {
         for i in 0..self.data_.len() {
             self.data_[i] *= rhs
         }
     }
 }
 #[opimps::impl_ops_rprim(core::ops::Mul)]
-pub fn mul<T: Numeric, const DIM: usize>(self: Matrix<T, DIM>, rhs: T) -> Matrix<T, DIM> {
+pub fn mul<T: Numeric>(self: Matrix<T>, rhs: T) -> Matrix<T> {
     let mut result = self.clone();
     result *= rhs;
     return result;
 }
 
 // Div scalar
-impl<T: Numeric, const DIM: usize> core::ops::DivAssign<T> for Matrix<T, DIM> {
-    fn div_assign(self: &mut Matrix<T, DIM>, rhs: T) {
+impl<T: Numeric> core::ops::DivAssign<T> for Matrix<T> {
+    fn div_assign(self: &mut Matrix<T>, rhs: T) {
         for i in 0..self.data_.len() {
             self.data_[i] /= rhs
         }
     }
 }
 #[opimps::impl_ops_rprim(core::ops::Div)]
-pub fn div<T: Numeric, const DIM: usize>(self: Matrix<T, DIM>, rhs: T) -> Matrix<T, DIM> {
+pub fn div<T: Numeric>(self: Matrix<T>, rhs: T) -> Matrix<T> {
     let mut result = self.clone();
     result /= rhs;
     return result;
 }
 
 // Sub scalar
-impl<T: Numeric, const DIM: usize> core::ops::SubAssign<T> for Matrix<T, DIM> {
-    fn sub_assign(self: &mut Matrix<T, DIM>, rhs: T) {
+impl<T: Numeric> core::ops::SubAssign<T> for Matrix<T> {
+    fn sub_assign(self: &mut Matrix<T>, rhs: T) {
         for i in 0..self.data_.len() {
             self.data_[i] -= rhs
         }
     }
 }
 #[opimps::impl_ops_rprim(core::ops::Sub)]
-pub fn sub<T: Numeric, const DIM: usize>(self: Matrix<T, DIM>, rhs: T) -> Matrix<T, DIM> {
+pub fn sub<T: Numeric>(self: Matrix<T>, rhs: T) -> Matrix<T> {
     let mut result = self.clone();
     result -= rhs;
     return result;
@@ -150,12 +187,8 @@ pub fn sub<T: Numeric, const DIM: usize>(self: Matrix<T, DIM>, rhs: T) -> Matrix
 // --- Element wise ---
 // Add matrix
 #[opimps::impl_ops_assign(std::ops::AddAssign)]
-pub fn add_assign<T: Numeric, const LDIM: usize, const RDIM: usize>(
-    self: Matrix<T, LDIM>,
-    rhs: Matrix<T, RDIM>,
-) {
+pub fn add_assign<T: Numeric>(self: Matrix<T>, rhs: Matrix<T>) {
     equal_dims(&self, &rhs);
-    assert!(LDIM >= RDIM, "LDIM < RDIM");
 
     for i in 0..self.data_.len() {
         self.data_[i] += rhs.data_[i];
@@ -163,10 +196,7 @@ pub fn add_assign<T: Numeric, const LDIM: usize, const RDIM: usize>(
 }
 
 #[opimps::impl_ops(core::ops::Add)]
-pub fn add<T: Numeric, const DIM: usize>(
-    self: Matrix<T, DIM>,
-    rhs: Matrix<T, DIM>,
-) -> Matrix<T, DIM> {
+pub fn add<T: Numeric>(self: Matrix<T>, rhs: Matrix<T>) -> Matrix<T> {
     equal_dims(&self, &rhs);
     let mut result = self.clone();
     result += rhs;
@@ -175,17 +205,14 @@ pub fn add<T: Numeric, const DIM: usize>(
 
 // Sub matrix
 #[opimps::impl_ops_assign(std::ops::SubAssign)]
-pub fn sub_assign<T: Numeric, const DIM: usize>(self: Matrix<T, DIM>, rhs: Matrix<T, DIM>) {
+pub fn sub_assign<T: Numeric>(self: Matrix<T>, rhs: Matrix<T>) {
     equal_dims(&self, &rhs);
     for i in 0..self.data_.len() {
         self.data_[i] -= rhs.data_[i];
     }
 }
 #[opimps::impl_ops(core::ops::Sub)]
-pub fn sub<T: Numeric, const DIM: usize>(
-    self: Matrix<T, DIM>,
-    rhs: Matrix<T, DIM>,
-) -> Matrix<T, DIM> {
+pub fn sub<T: Numeric>(self: Matrix<T>, rhs: Matrix<T>) -> Matrix<T> {
     equal_dims(&self, &rhs);
     let mut result = self.clone();
     result -= rhs;
@@ -194,17 +221,14 @@ pub fn sub<T: Numeric, const DIM: usize>(
 
 // Mul matrix
 #[opimps::impl_ops_assign(std::ops::MulAssign)]
-pub fn mul_assign<T: Numeric, const DIM: usize>(self: Matrix<T, DIM>, rhs: Matrix<T, DIM>) {
+pub fn mul_assign<T: Numeric>(self: Matrix<T>, rhs: Matrix<T>) {
     equal_dims(&self, &rhs);
     for i in 0..self.data_.len() {
         self.data_[i] *= rhs.data_[i];
     }
 }
 #[opimps::impl_ops(core::ops::Mul)]
-pub fn mul<T: Numeric, const DIM: usize>(
-    self: Matrix<T, DIM>,
-    rhs: Matrix<T, DIM>,
-) -> Matrix<T, DIM> {
+pub fn mul<T: Numeric>(self: Matrix<T>, rhs: Matrix<T>) -> Matrix<T> {
     equal_dims(&self, &rhs);
     let mut result = self.clone();
     result *= rhs;
@@ -221,14 +245,11 @@ struct MutableMatrixView2<'a, T: Numeric> {
 
 impl<'a, T: Numeric> MutableMatrixView2<'a, T> {
     // Constructs a new, empty `Matric<T>`.
-    pub fn new<const DIM: usize>(
-        m: &'a mut Matrix<T, DIM>,
-        _offset: usize,
-    ) -> MutableMatrixView2<'a, T> {
-        assert!(DIM >= 2);
+    pub fn new(m: &'a mut Matrix<T>, _offset: usize) -> MutableMatrixView2<'a, T> {
+        assert!(m.dims().len() >= 2);
         Self {
-            rows: m.dims()[DIM - 2],
-            cols: m.dims()[DIM - 1],
+            rows: m.dims()[m.dims().len() - 2],
+            cols: m.dims()[m.dims().len() - 1],
             offset: _offset,
             data: m.mutable_data(),
         }
@@ -244,11 +265,11 @@ struct MatrixView2<'a, T: Numeric> {
 
 impl<'a, T: Numeric> MatrixView2<'a, T> {
     // Constructs a new, empty `Matric<T>`.
-    pub fn new<const DIM: usize>(m: &'a Matrix<T, DIM>, _offset: usize) -> MatrixView2<'a, T> {
-        assert!(DIM >= 2);
+    pub fn new(m: &'a Matrix<T>, _offset: usize) -> MatrixView2<'a, T> {
+        assert!(m.dims().len() >= 2);
         Self {
-            rows: m.dims()[DIM - 2],
-            cols: m.dims()[DIM - 1],
+            rows: m.dims()[m.dims().len() - 2],
+            cols: m.dims()[m.dims().len() - 1],
             offset: _offset,
             data: m.data(),
         }
@@ -281,36 +302,33 @@ fn matmul_impl<T: Numeric>(
     }
 }
 
-pub fn matmul1d<T: Numeric>(lhs: &Matrix<T, 1>, rhs: &Matrix<T, 1>) -> T {
-    return std::iter::zip(lhs.data(), rhs.data())
-        .fold(T::default(), |acc, (x1, x2)| acc + *x1 * *x2);
-}
-
 // --- Matrix mul ---
-pub fn matmul<T: Numeric, const DIM: usize>(
-    lhs: &Matrix<T, DIM>,
-    rhs: &Matrix<T, DIM>,
-) -> Matrix<T, DIM> {
-    for i in 0..DIM - 2 {
+
+pub fn matmul_assign<T: Numeric>(lhs: &Matrix<T>, rhs: &Matrix<T>, mut output: &mut Matrix<T>) {
+    let lhs_ndims: usize = lhs.dims().len();
+    for i in 0..lhs_ndims - 2 {
         assert!(lhs.dims()[i] == rhs.dims()[i], "Incompatible matrix sizes.");
     }
-    let mut dims = lhs.dims().clone();
-    dims[DIM - 1] = rhs.dims()[DIM - 1];
+    let mut dims: Dims = lhs.dims().into();
+    dims.set_dim_size(lhs_ndims - 1, rhs.dims()[lhs_ndims - 1]);
 
-    let mut output = Matrix::<T, DIM>::new(dims);
+    assert!(
+        output.dims() == dims.dims(),
+        "Output matrix has invalid size.",
+    );
 
-    if DIM == 2 {
+    if lhs_ndims == 2 {
         matmul_impl(
             MatrixView2::<T>::new(&lhs, 0),
             MatrixView2::<T>::new(&rhs, 0),
             MutableMatrixView2::<T>::new(&mut output, 0),
         );
     } else {
-        let lstride = lhs.dims()[DIM - 1] * lhs.dims()[DIM - 2];
-        let rstride = rhs.dims()[DIM - 1] * rhs.dims()[DIM - 2];
-        let ostride = output.dims()[DIM - 1] * output.dims()[DIM - 2];
+        let lstride = lhs.dims()[lhs_ndims - 1] * lhs.dims()[lhs_ndims - 2];
+        let rstride = rhs.dims()[lhs_ndims - 1] * rhs.dims()[lhs_ndims - 2];
+        let ostride = output.dims()[lhs_ndims - 1] * output.dims()[lhs_ndims - 2];
 
-        let num_rep: usize = lhs.dims().iter().fold(1, |acc, x| acc * x) / lstride;
+        let num_rep: usize = lhs.dims()[..lhs_ndims - 2].iter().fold(1, |acc, x| acc * x);
 
         for d in 0..num_rep {
             matmul_impl(
@@ -320,5 +338,17 @@ pub fn matmul<T: Numeric, const DIM: usize>(
             );
         }
     }
+}
+
+pub fn matmul<T: Numeric>(lhs: &Matrix<T>, rhs: &Matrix<T>) -> Matrix<T> {
+    let lhs_ndims: usize = lhs.dims().len();
+    for i in 0..lhs_ndims - 2 {
+        assert!(lhs.dims()[i] == rhs.dims()[i], "Incompatible matrix sizes.");
+    }
+    let mut dims: Dims = lhs.dims().into();
+    dims.set_dim_size(lhs_ndims - 1, rhs.dims()[lhs_ndims - 1]);
+
+    let mut output = Matrix::<T>::new(dims.dims());
+    matmul_assign(lhs, rhs, &mut output);
     return output;
 }
