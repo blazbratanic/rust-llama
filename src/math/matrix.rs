@@ -1,21 +1,7 @@
 use num_traits;
 
-pub trait Numeric: num_traits::NumAssign + Clone + Default + Copy {}
-impl<T> Numeric for T where T: num_traits::NumAssign + Clone + Default + Copy {}
-
-trait MaxSize {
-    const MAX_SIZE: usize;
-}
-
-struct MaxSizeCondition<const LDIM: usize, const RDIM: usize, const CONDITION: bool> {}
-
-impl<const LDIM: usize, const RDIM: usize> MaxSize for MaxSizeCondition<LDIM, RDIM, true> {
-    const MAX_SIZE: usize = LDIM;
-}
-
-impl<const LDIM: usize, const RDIM: usize> MaxSize for MaxSizeCondition<LDIM, RDIM, false> {
-    const MAX_SIZE: usize = RDIM;
-}
+pub trait Numeric: num_traits::NumAssign + Clone + Default + Copy + std::fmt::Debug {}
+impl<T> Numeric for T where T: num_traits::NumAssign + Clone + Default + Copy + std::fmt::Debug {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Matrix<T: Numeric, const DIM: usize> {
@@ -24,9 +10,43 @@ pub struct Matrix<T: Numeric, const DIM: usize> {
     contiguous_: bool,
 }
 
+fn print_matrix<T: Numeric>(
+    data: &std::vec::Vec<T>,
+    dims: &[usize],
+    offset: usize,
+    f: &mut std::fmt::Formatter,
+) -> std::fmt::Result {
+    if dims.len() == 1 {
+        let mut row = vec![T::default(); dims[0]];
+        for i in 0..dims[0] {
+            row[i] = data[i + offset];
+        }
+        write!(f, "{:?}\n", row)?;
+    } else {
+        let stride: usize = dims[1..].iter().fold(1, |acc, x| acc * x);
+        write!(f, "[\n")?;
+        for i in 0..dims[0] {
+            print_matrix::<T>(
+                data,
+                dims[1..].try_into().expect("Invalid"),
+                offset + i * stride,
+                f,
+            )?;
+        }
+        write!(f, "]\n")?;
+    }
+    Ok(())
+}
+
+impl<T: Numeric, const DIM: usize> std::fmt::Display for Matrix<T, DIM> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        return print_matrix(self.data(), self.dims(), 0, f);
+    }
+}
+
 impl<T: Numeric, const DIM: usize> Matrix<T, DIM> {
     // Constructs a new, empty `Matric<T>`.
-    pub fn new(dims: [usize; DIM]) -> Self {
+    pub fn new(dims: &[usize; DIM]) -> Self {
         Self::with_value(dims, T::default())
     }
     // Constructs a new, empty `Matric<T>`.
@@ -192,6 +212,7 @@ pub fn mul<T: Numeric, const DIM: usize>(
 }
 
 struct MutableMatrixView2<'a, T: Numeric> {
+    #[allow(dead_code)]
     rows: usize,
     cols: usize,
     offset: usize,
@@ -204,10 +225,10 @@ impl<'a, T: Numeric> MutableMatrixView2<'a, T> {
         m: &'a mut Matrix<T, DIM>,
         _offset: usize,
     ) -> MutableMatrixView2<'a, T> {
-        assert!(DIM == 2);
+        assert!(DIM >= 2);
         Self {
-            rows: m.dims()[0],
-            cols: m.dims()[1],
+            rows: m.dims()[DIM - 2],
+            cols: m.dims()[DIM - 1],
             offset: _offset,
             data: m.mutable_data(),
         }
@@ -224,10 +245,10 @@ struct MatrixView2<'a, T: Numeric> {
 impl<'a, T: Numeric> MatrixView2<'a, T> {
     // Constructs a new, empty `Matric<T>`.
     pub fn new<const DIM: usize>(m: &'a Matrix<T, DIM>, _offset: usize) -> MatrixView2<'a, T> {
-        assert!(DIM == 2);
+        assert!(DIM >= 2);
         Self {
-            rows: m.dims()[0],
-            cols: m.dims()[1],
+            rows: m.dims()[DIM - 2],
+            cols: m.dims()[DIM - 1],
             offset: _offset,
             data: m.data(),
         }
@@ -239,7 +260,10 @@ fn matmul_impl<T: Numeric>(
     rhs: MatrixView2<T>,
     output: MutableMatrixView2<T>,
 ) {
-    assert!(lhs.cols == rhs.rows, "Invalid matrix shapes. Must be of form (n, k) (k, m)");
+    assert!(
+        lhs.cols == rhs.rows,
+        "Invalid matrix shapes. Must be of form (n, k) (k, m)"
+    );
 
     // (n, m) * (m, k) => (n, k)
     for lhs_r in 0..lhs.rows {
@@ -257,21 +281,44 @@ fn matmul_impl<T: Numeric>(
     }
 }
 
+pub fn matmul1d<T: Numeric>(lhs: &Matrix<T, 1>, rhs: &Matrix<T, 1>) -> T {
+    return std::iter::zip(lhs.data(), rhs.data())
+        .fold(T::default(), |acc, (x1, x2)| acc + *x1 * *x2);
+}
+
 // --- Matrix mul ---
-pub fn matmul<T: Numeric, const DIM: usize>
-(lhs: &Matrix<T, DIM>, rhs: &Matrix<T, DIM>) -> Matrix<T, DIM> {
-    // if RDIM > LDIM {
-    //     return matmul(rhs, lhs);
-    // }
+pub fn matmul<T: Numeric, const DIM: usize>(
+    lhs: &Matrix<T, DIM>,
+    rhs: &Matrix<T, DIM>,
+) -> Matrix<T, DIM> {
+    for i in 0..DIM - 2 {
+        assert!(lhs.dims()[i] == rhs.dims()[i], "Incompatible matrix sizes.");
+    }
+    let mut dims = lhs.dims().clone();
+    dims[DIM - 1] = rhs.dims()[DIM - 1];
+
+    let mut output = Matrix::<T, DIM>::new(dims);
 
     if DIM == 2 {
-    let mut output = Matrix::<T, 2>::new([lhs.dims()[0], rhs.dims()[1]]);
-    matmul_impl(
-        MatrixView2::<T>::new(&lhs, 0),
-        MatrixView2::<T>::new(&rhs, 0),
-        MutableMatrixView2::<T>::new(&mut output, 0),
-    );
-    return output;
+        matmul_impl(
+            MatrixView2::<T>::new(&lhs, 0),
+            MatrixView2::<T>::new(&rhs, 0),
+            MutableMatrixView2::<T>::new(&mut output, 0),
+        );
+    } else {
+        let lstride = lhs.dims()[DIM - 1] * lhs.dims()[DIM - 2];
+        let rstride = rhs.dims()[DIM - 1] * rhs.dims()[DIM - 2];
+        let ostride = output.dims()[DIM - 1] * output.dims()[DIM - 2];
+
+        let num_rep: usize = lhs.dims().iter().fold(1, |acc, x| acc * x) / lstride;
+
+        for d in 0..num_rep {
+            matmul_impl(
+                MatrixView2::<T>::new(&lhs, d * lstride),
+                MatrixView2::<T>::new(&rhs, d * rstride),
+                MutableMatrixView2::<T>::new(&mut output, d * ostride),
+            );
+        }
     }
-    panic!("Invalid");
+    return output;
 }
