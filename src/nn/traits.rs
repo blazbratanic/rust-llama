@@ -1,5 +1,11 @@
-pub trait Numeric: num_traits::NumAssign + Clone + Default + Copy + std::fmt::Debug {}
-impl<T> Numeric for T where T: num_traits::NumAssign + Clone + Default + Copy + std::fmt::Debug {}
+pub trait Numeric:
+    num_traits::NumAssign + Clone + Default + Copy + std::fmt::Debug
+{
+}
+impl<T> Numeric for T where
+    T: num_traits::NumAssign + Clone + Default + Copy + std::fmt::Debug
+{
+}
 
 pub trait One {
     type Item;

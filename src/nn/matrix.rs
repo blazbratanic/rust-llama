@@ -35,6 +35,19 @@ impl Into<Dims> for &[usize] {
     }
 }
 
+fn is_broadcastable(dims1: &[usize], dims2: &[usize]) -> bool {
+    for (d1, d2) in std::iter::zip(dims1.iter().rev(), dims2.iter().rev()) {
+        if d1 != d2 && d1 != &1usize && d2 != &1usize {
+            return false;
+        }
+    }
+    return true;
+}
+
+fn get_data_size(dims: &[usize]) -> usize {
+    dims.iter().fold(1, |acc, x| acc * x)
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Matrix<T: Numeric> {
     data_: std::vec::Vec<T>,
@@ -50,7 +63,7 @@ impl<T: Numeric> Matrix<T> {
     // Constructs a new, empty `Matric<T>`.
     pub fn with_value(dims: &[usize], value: T) -> Self {
         assert!(dims.len() > 0, "Matrix dim must be > 0");
-        let size: usize = dims.iter().fold(1, |acc, x| acc * x);
+        let size: usize = get_data_size(dims);
         Self {
             data_: vec![value; size],
             dims_: dims.into(),
@@ -61,13 +74,6 @@ impl<T: Numeric> Matrix<T> {
     pub fn apply(&mut self, f: &dyn Fn(T) -> T) -> &mut Matrix<T> {
         for i in 0..self.data_.len() {
             self.data_[i] = f(self.data_[i]);
-        }
-        return self;
-    }
-
-    pub fn apply2(&mut self, k: T, f: &dyn Fn(T, T) -> T) -> &mut Matrix<T> {
-        for i in 0..self.data_.len() {
-            self.data_[i] = f(k, self.data_[i]);
         }
         return self;
     }
@@ -84,6 +90,35 @@ impl<T: Numeric> Matrix<T> {
     pub fn contiguous(&self) -> bool {
         self.contiguous_
     }
+
+    pub fn fill_where<U: Numeric>(&mut self, mask: &Matrix<U>, value: U, fill_value: T) -> &mut Matrix<T> {
+        assert!(
+            is_broadcastable(self.dims(), mask.dims()),
+            "Incompatible matrix sizes {:?} {:?}.",
+            self.dims(),
+            mask.dims()
+        );
+        assert!(
+            mask.dims().len() <= self.dims().len(),
+            "Mask cannot have more dimensions than matrix {:?} > {:?}.",
+            mask.dims().len(),
+            self.dims().len()
+        );
+
+        let data_size = get_data_size(self.dims());
+        let stride = get_data_size(mask.dims());
+
+        let num_iter = data_size / stride;
+
+        for i in 0..num_iter {
+            for j in 0..stride {
+                if mask.data()[j] == value {
+                    self.data_[j + i * stride] = fill_value;
+                }
+            }
+        }
+            return self;
+    }
 }
 
 fn print_matrix<T: Numeric>(
@@ -99,7 +134,7 @@ fn print_matrix<T: Numeric>(
         }
         write!(f, "{:?}\n", row)?;
     } else {
-        let stride: usize = dims[1..].iter().fold(1, |acc, x| acc * x);
+        let stride: usize = get_data_size(&dims[1..]);
         write!(f, "[\n")?;
         for i in 0..dims[0] {
             print_matrix::<T>(
@@ -341,7 +376,7 @@ pub fn matmul_assign<T: Numeric>(lhs: &Matrix<T>, rhs: &Matrix<T>, mut output: &
         let rstride = rhs.dims()[lhs_ndims - 1] * rhs.dims()[lhs_ndims - 2];
         let ostride = output.dims()[lhs_ndims - 1] * output.dims()[lhs_ndims - 2];
 
-        let num_rep: usize = lhs.dims()[..lhs_ndims - 2].iter().fold(1, |acc, x| acc * x);
+        let num_rep: usize = get_data_size(&lhs.dims()[..lhs_ndims - 2]);
 
         for d in 0..num_rep {
             matmul_impl(
